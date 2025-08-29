@@ -1,0 +1,7 @@
+{
+  "name": "job-requests-notify",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": { "node-appwrite": "^13.0.0" }
+}
