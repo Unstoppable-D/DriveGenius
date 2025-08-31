@@ -1,11 +1,14 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:appwrite/appwrite.dart';
 import 'package:appwrite/models.dart';
+import 'package:crypto/crypto.dart' as crypto;
 import '../constants/appwrite_constants.dart';
 import '../models/driver_profile.dart';
 import '../models/job_request.dart';
 import '../models/public_user.dart';
+import '../utils/chat_utils.dart';
 
 class AppwriteService {
   static final AppwriteService _instance = AppwriteService._internal();
@@ -27,6 +30,17 @@ class AppwriteService {
     _databases = Databases(_client);
     _storage = Storage(_client);
     _realtime = Realtime(_client);
+  }
+
+  // Session management
+  Future<bool> hasSession() async {
+    try {
+      await _account.get();
+      return true;
+    } on AppwriteException catch (e) {
+      if (e.code == 401) return false;
+      rethrow;
+    }
   }
 
   // Authentication Methods
@@ -1688,18 +1702,38 @@ class AppwriteService {
 
   // Notifications for client
   Future<List<Document>> listClientNotifications(String userId) async {
+    if (!await hasSession()) return [];
     try {
+      // Prefer system $createdAt so we don't depend on a custom attribute
       final docs = await _databases.listDocuments(
         databaseId: AppwriteIds.databaseId,
         collectionId: AppwriteIds.notificationsCollectionId,
         queries: [
           Query.equal('userId', [userId]),
-          Query.orderDesc('createdAt'),
+          Query.orderDesc(r'$createdAt'),
           Query.limit(100),
         ],
       );
       return docs.documents;
-    } catch (e) {
+    } on AppwriteException catch (e) {
+      // Fallback: if some projects still use a custom createdAt, try that
+      if (e.code == 400) {
+        try {
+          final docs = await _databases.listDocuments(
+            databaseId: AppwriteIds.databaseId,
+            collectionId: AppwriteIds.notificationsCollectionId,
+            queries: [
+              Query.equal('userId', [userId]),
+              Query.orderDesc('createdAt'),
+              Query.limit(100),
+            ],
+          );
+          return docs.documents;
+        } catch (e2) {
+          print('❌ Notifications list fallback failed: $e2');
+          return [];
+        }
+      }
       print('❌ Error listing client notifications: $e');
       // Return empty list on 404 to prevent UI crashes
       if (e.toString().contains('404') || e.toString().contains('collection_not_found')) {
@@ -1712,6 +1746,7 @@ class AppwriteService {
 
   // Count unread notifications for client
   Future<int> countClientUnreadNotifications(String userId) async {
+    if (!await hasSession()) return 0;
     try {
       final DocumentList docs = await _databases.listDocuments(
         databaseId: AppwriteIds.databaseId,
@@ -1748,6 +1783,7 @@ class AppwriteService {
 
   // Mark notification as read
   Future<void> markNotificationRead(String notifId) async {
+    if (!await hasSession()) return;
     try {
       await _databases.updateDocument(
         databaseId: AppwriteIds.databaseId,
@@ -1761,6 +1797,338 @@ class AppwriteService {
     } catch (e) {
       print('❌ Error marking notification as read: $e');
       throw _handleAppwriteError(e);
+    }
+  }
+
+  // Chat and Messaging Methods
+  // Find or create conversation using "members" as pairKey string
+  Future<Document> getOrCreateConversation(String a, String b) async {
+    final key = makePairKey(a, b);
+
+    // Try find by exact pairKey
+    final found = await _databases.listDocuments(
+      databaseId: AppwriteIds.databaseId,
+      collectionId: AppwriteIds.conversationsCollectionId,
+      queries: [
+        Query.equal('members', [key]),
+        Query.limit(1),
+      ],
+    );
+    if (found.documents.isNotEmpty) return found.documents.first;
+
+    // Create new conversation
+    final now = DateTime.now().toIso8601String();
+    final conv = await _databases.createDocument(
+      databaseId: AppwriteIds.databaseId,
+      collectionId: AppwriteIds.conversationsCollectionId,
+      documentId: ID.unique(),
+      data: {
+        'members': key,              // REQUIRED String
+        'lastMessage': '',           // REQUIRED String (empty is fine)
+        'lastMessageAt': now,        // optional in schema but good to fill
+      },
+      // TEMP: Users perms so client can create; your chat-acl function should tighten to the two users
+      permissions: [
+        Permission.read(Role.users()),
+        Permission.write(Role.users()),
+        Permission.update(Role.users()),
+      ],
+    );
+    return conv;
+  }
+
+  // Inbox: try to narrow with search; fallback to list+filter client-side
+  Future<List<Document>> listUserConversations(String userId) async {
+    // Try Query.search (works if Console allows; if not, we fallback)
+    try {
+      final searched = await _databases.listDocuments(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.conversationsCollectionId,
+        queries: [
+          Query.search('members', userId),
+          Query.limit(100),
+        ],
+      );
+      final list = searched.documents;
+      list.sort((x, y) {
+        final ax = (x.data['lastMessageAt'] as String?) ?? x.$createdAt ?? '';
+        final ay = (y.data['lastMessageAt'] as String?) ?? y.$createdAt ?? '';
+        return ay.compareTo(ax);
+      });
+      return list;
+    } on AppwriteException catch (e) {
+      // Fallback: list visible docs (server already restricts by perms) and filter locally
+      final docs = await _databases.listDocuments(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.conversationsCollectionId,
+        queries: [
+          Query.limit(100),
+          // Avoid fragile ordering by custom fields; UI can sort in-memory by lastMessageAt/$createdAt
+        ],
+      );
+      final filtered = docs.documents.where((d) {
+        final key = (d.data['members'] as String?) ?? '';
+        return key.contains(userId); // okay because perms already limit visibility
+      }).toList();
+
+      filtered.sort((x, y) {
+        final ax = (x.data['lastMessageAt'] as String?) ?? x.$createdAt ?? '';
+        final ay = (y.data['lastMessageAt'] as String?) ?? y.$createdAt ?? '';
+        return ay.compareTo(ax);
+      });
+      return filtered;
+    }
+  }
+
+  // Conversation messages
+  Future<List<Document>> listMessages(String conversationId, {int limit = 50}) async {
+    try {
+      final docs = await _databases.listDocuments(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.messagesCollectionId,
+        queries: [
+          Query.equal('conversationId', [conversationId]),
+          Query.orderAsc(r'$createdAt'),
+          Query.limit(limit),
+        ],
+      );
+      return docs.documents;
+    } catch (e) {
+      print('❌ Error listing messages: $e');
+      throw _handleAppwriteError(e);
+    }
+  }
+
+  // Send message
+  Future<Document> sendMessage({
+    required String conversationId,
+    required String senderId,
+    required String text,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+
+    // base data without custom createdAt
+    final base = <String, dynamic>{
+      'conversationId': conversationId,
+      'senderId': senderId,
+      'body': text,
+      'type': 'text',
+    };
+
+    // Try with createdAt first (if your schema truly has it), then fallback
+    Map<String, dynamic> dataWithCreated = {...base, 'createdAt': now};
+
+    Future<Document> _create(Map<String, dynamic> payload) {
+      return _databases.createDocument(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.messagesCollectionId,
+        documentId: ID.unique(),
+        data: payload,
+        permissions: [
+          // TEMP Users perms; your chat-acl function should restrict to two users on CREATE
+          Permission.read(Role.users()),
+          Permission.write(Role.users()),
+          Permission.update(Role.users()),
+        ],
+      );
+    }
+
+    Document msg;
+    try {
+      msg = await _create(dataWithCreated);
+    } on AppwriteException catch (e) {
+      // If schema rejects 'createdAt', retry without it
+      final msgStr = (e.message ?? '').toLowerCase();
+      if (e.code == 400 && (msgStr.contains('createdat') || msgStr.contains('unknown attribute'))) {
+        print('⚠️ createdAt not in schema; retrying without it');
+        msg = await _create(base);
+      } else {
+        print('❌ Error sending message: ${e.type} ${e.code} ${e.message}');
+        throw _handleAppwriteError(e);
+      }
+    }
+
+    // Update conversation summary (safe)
+    try {
+      await _databases.updateDocument(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.conversationsCollectionId,
+        documentId: conversationId,
+        data: {
+          'lastMessage': text,
+          'lastMessageAt': now,
+        },
+      );
+    } catch (e) {
+      print('⚠️ Failed to update conversation summary: $e');
+    }
+
+    return msg;
+  }
+
+  // Subscribe to messages for a conversation
+  RealtimeSubscription subscribeMessages({
+    required String conversationId,
+    required void Function(Map<String, dynamic> payload) onCreate,
+  }) {
+    final channel =
+        'databases.${AppwriteIds.databaseId}.collections.${AppwriteIds.messagesCollectionId}.documents';
+    final sub = _realtime.subscribe([channel]);
+    sub.stream.listen((event) {
+      // Debug logs (remove later if noisy)
+      // debugPrint('RT Event: ${event.events} -> ${event.payload}');
+
+      if (!event.events.any((e) => e.endsWith('.create'))) return;
+      final p = event.payload;
+      if (p is Map && p['conversationId'] == conversationId) {
+        onCreate(Map<String, dynamic>.from(p));
+      }
+    }, onError: (e) {
+      // debugPrint('RT Error: $e');
+    });
+    return sub;
+  }
+
+  // Subscribe to any conversation change that involves this user (inbox auto-refresh)
+  RealtimeSubscription subscribeConversations({
+    required String userId,
+    required VoidCallback onChange,
+  }) {
+    final channel =
+        'databases.${AppwriteIds.databaseId}.collections.${AppwriteIds.conversationsCollectionId}.documents';
+    final sub = _realtime.subscribe([channel]);
+    sub.stream.listen((event) {
+      final p = event.payload;
+      if (p is Map) {
+        final key = (p['members'] as String?) ?? '';
+        if (key.contains(userId)) onChange();
+      }
+    }, onError: (e) {
+      // debugPrint('RT conv error: $e');
+    });
+    return sub;
+  }
+
+  // ---------- Conversation and Peer Management ----------
+
+  Future<Document> getConversation(String id) {
+    return _databases.getDocument(
+      databaseId: AppwriteIds.databaseId,
+      collectionId: AppwriteIds.conversationsCollectionId,
+      documentId: id,
+    );
+  }
+
+  String? resolvePeerIdFromConversation(Document conv, String myId) {
+    final key = (conv.data['members'] as String?) ?? '';
+    return peerIdFromPairKey(key, myId);
+  }
+
+  // Fetch peer profile (name + avatar) for display
+  Future<Map<String, dynamic>?> fetchPeerPublic(String peerId) async {
+    try {
+      final doc = await _databases.getDocument(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.profilesCollectionId,
+        documentId: peerId,
+      );
+      return {
+        'name': (doc.data['name'] as String?) ?? 'User',
+        'avatarUrl': null, // if you store avatar in verifications or prefs, plug it in
+        'role': (doc.data['role'] as String?) ?? 'client',
+        'verified': (doc.data['isVerified'] as bool?) ?? false,
+      };
+    } catch (e) {
+      print('⚠️ fetchPeerPublic failed: $e');
+      return null;
+    }
+  }
+
+  // ---------- Unread / messages_read ----------
+
+  String _readDocId(String conversationId, String userId) {
+    final raw = '$conversationId|$userId';
+    final hash = crypto.sha1.convert(utf8.encode(raw)).toString().substring(0, 30);
+    return 'rd_$hash'; // <=36 chars, valid
+  }
+
+  Future<void> markConversationRead({
+    required String conversationId,
+    required String userId,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final docId = _readDocId(conversationId, userId);
+
+    try {
+      await _databases.updateDocument(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.messagesReadCollectionId,
+        documentId: docId,
+        data: {'lastReadAt': now, 'updatedAt': now},
+      );
+    } on AppwriteException catch (e) {
+      if (e.code == 404) {
+        // Create if missing
+        await _databases.createDocument(
+          databaseId: AppwriteIds.databaseId,
+          collectionId: AppwriteIds.messagesReadCollectionId,
+          documentId: docId,
+          data: {
+            'conversationId': conversationId,
+            'userId': userId,
+            'lastReadAt': now,
+            'updatedAt': now,
+          },
+          permissions: [
+            Permission.read(Role.user(userId)),
+            Permission.update(Role.user(userId)),
+            Permission.delete(Role.user(userId)),
+          ],
+        );
+              } else {
+          debugPrint('⚠️ markConversationRead failed: ${e.message}');
+        }
+    }
+  }
+
+  // Count unread messages for a conversation for userId
+  Future<int> countUnreadForConversation({
+    required String conversationId,
+    required String userId,
+  }) async {
+    // get lastReadAt
+    String? lastReadAt;
+    try {
+      final rd = await _databases.getDocument(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.messagesReadCollectionId,
+        documentId: _readDocId(conversationId, userId),
+      );
+      lastReadAt = (rd.data['lastReadAt'] as String?) ?? '';
+    } catch (_) {
+      lastReadAt = null;
+    }
+
+    // Query messages newer than lastReadAt and not sent by user
+    final queries = <String>[
+      Query.equal('conversationId', [conversationId]),
+      Query.notEqual('senderId', [userId]),
+      Query.limit(100),
+    ];
+    if (lastReadAt != null && lastReadAt.isNotEmpty) {
+      queries.add(Query.greaterThan(r'$createdAt', lastReadAt)); // system field
+    }
+
+    try {
+      final docs = await _databases.listDocuments(
+        databaseId: AppwriteIds.databaseId,
+        collectionId: AppwriteIds.messagesCollectionId,
+        queries: queries,
+      );
+      return docs.total ?? docs.documents.length;
+    } on AppwriteException catch (e) {
+      print('⚠️ countUnreadForConversation error: ${e.message}');
+      return 0;
     }
   }
 

@@ -227,14 +227,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     icon: Icons.person_outline,
                     onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
                   ),
-                  if (!verified)
-            QuickActionCard(
-                      title: 'Verification',
-                      subtitle: 'Complete now',
-                      icon: Icons.verified_outlined,
-                      color: Colors.orange,
-                      onTap: () => Navigator.pushNamed(context, AppRoutes.verification),
-            ),
                         QuickActionCard(
               title: 'Job requests',
               subtitle: 'See assigned',
@@ -250,26 +242,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               onTap: () => Navigator.pushNamed(context, AppRoutes.activeJobs),
             ),
             QuickActionCard(
-              title: 'Earnings',
-              subtitle: 'Overview',
-              icon: Icons.payments_outlined,
-              color: Colors.green,
-              onTap: () => Navigator.pushNamed(context, AppRoutes.earnings),
-            ),
-            QuickActionCard(
               title: 'Messages',
                     subtitle: 'Chat',
                     icon: Icons.chat_bubble_outline,
                     color: Colors.blue,
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.messages),
+                    onTap: () => Navigator.pushNamed(context, AppRoutes.chatInbox),
             ),
-            QuickActionCard(
-              title: 'Emergency',
-                    subtitle: 'Quick contacts',
-                    icon: Icons.emergency_share_outlined,
-                    color: Colors.red,
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.emergency),
-                  ),
                 ]),
               ),
             ),

@@ -191,10 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
         IconButton(
           icon: const Icon(Icons.notifications_outlined),
           onPressed: () {
-            // TODO: Navigate to notifications page
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Notifications coming soon!')),
-            );
+            Navigator.pushNamed(context, AppRoutes.notifications);
           },
         ),
         
@@ -300,13 +297,6 @@ class _HomeScreenState extends State<HomeScreen> {
           color: AppColors.secondary,
           onTap: () => Navigator.pushNamed(context, AppRoutes.messages),
         ),
-        QuickActionCard(
-          title: 'Profile',
-          subtitle: 'Edit personal info',
-          icon: Icons.person_outline,
-          color: AppColors.secondary,
-          onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
-        ),
       ];
     } else {
       return [
@@ -337,13 +327,6 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: Icons.chat_outlined,
           color: AppColors.secondary,
           onTap: () => Navigator.pushNamed(context, AppRoutes.messages),
-        ),
-        QuickActionCard(
-          title: 'Profile',
-          subtitle: 'Edit personal info',
-          icon: Icons.person_outline,
-          color: AppColors.secondary,
-          onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
         ),
       ];
     }

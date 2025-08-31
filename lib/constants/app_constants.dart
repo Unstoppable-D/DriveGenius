@@ -271,6 +271,9 @@ class AppRoutes {
   static const String profile = '/profile';
   static const String settings = '/settings';
   static const String notifications = '/notifications';
+  static const String findDrivers = '/find-drivers';
+  static const String chatInbox = '/chat-inbox';
+  static const String chatRoom = '/chat';
   static const String help = '/help';
   static const String about = '/about';
   

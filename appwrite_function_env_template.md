@@ -6,7 +6,7 @@ Set these in your Appwrite Function's environment variables:
 
 ```bash
 # Appwrite Configuration
-APPWRITE_ENDPOINT=https://fra.cloud.appwrite.io/v1
+APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 APPWRITE_FUNCTION_PROJECT_ID=68a53f930037f28d12a8
 
 # Database and Collection IDs
@@ -20,7 +20,7 @@ APPWRITE_API_KEY=your_server_api_key_here
 ## How to Get These Values
 
 ### 1. APPWRITE_ENDPOINT
-- Use your project's endpoint: `https://fra.cloud.appwrite.io/v1`
+- Use your project's endpoint: `https://cloud.appwrite.io/v1`
 
 ### 2. APPWRITE_FUNCTION_PROJECT_ID
 - Your project ID: `68a53f930037f28d12a8`

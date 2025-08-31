@@ -1,140 +1,120 @@
-# Appwrite Functions Setup Guide
+# DriveGenius Appwrite Functions
 
-This directory contains the Appwrite Functions needed for the DriveGenius job request system to work end-to-end.
+This directory contains Node.js functions for the DriveGenius application, configured for Git-based deployments to Appwrite.
 
-## Functions Overview
+## Function Structure
 
-### 1. `job-requests-acl` - Access Control List
-**Purpose**: Sets proper permissions when job requests are created
-**Trigger**: `databases.*.collections.job_requests.documents.create`
-**What it does**: Grants read/update permissions to both client and driver
+Each function is self-contained in its own directory with:
+- `package.json` - Dependencies and metadata
+- `index.mjs` - Main function code (ESM format)
 
-### 2. `job-requests-notify` - Client Notifications
-**Purpose**: Creates notifications when drivers accept/reject requests
-**Trigger**: `databases.*.collections.job_requests.documents.update`
-**What it does**: Sends real-time updates to clients with ETA for accepted trips
+### Functions
 
-## Deployment Steps
+1. **job-requests-acl** - Sets permissions on job request documents
+2. **job-requests-notify** - Creates notifications when job status changes
+3. **chat-acl** - Sets permissions on conversation and message documents
 
-### Prerequisites
-- Appwrite Console access
-- Server API key with database read/write permissions
-- Node.js 20 runtime available
+## Appwrite Console Configuration
 
-### Step 1: Deploy ACL Function
-1. In Appwrite Console → Functions → Create Function
-2. **Name**: `job-requests-acl`
-3. **Runtime**: Node.js 20
-4. **Events**: `databases.*.collections.job_requests.documents.create`
-5. **Code**: Copy from `functions/job-requests-acl/index.mjs`
-6. **Environment Variables**:
-   ```
-   APPWRITE_ENDPOINT=https://<your-region>.cloud.appwrite.io/v1
-   APPWRITE_API_KEY=<server-key-with-db-permissions>
-   APPWRITE_DATABASE_ID=drive_genius_db
-   APPWRITE_JOB_REQUESTS_ID=job_requests
-   ```
-7. **Deploy** and **Activate**
+### For Each Function:
 
-### Step 2: Deploy Notifications Function
-1. In Appwrite Console → Functions → Create Function
-2. **Name**: `job-requests-notify`
-3. **Runtime**: Node.js 20
-4. **Events**: `databases.*.collections.job_requests.documents.update`
-5. **Code**: Copy from `functions/job-requests-notify/index.mjs`
-6. **Environment Variables**:
-   ```
-   APPWRITE_ENDPOINT=https://<your-region>.cloud.appwrite.io/v1
-   APPWRITE_API_KEY=<server-key-with-db-permissions>
-   APPWRITE_DATABASE_ID=drive_genius_db
-   APPWRITE_JOB_REQUESTS_ID=job_requests
-   APPWRITE_NOTIFICATIONS_ID=<EXACT-notifications-collection-id>
-   ```
-7. **Deploy** and **Activate**
+#### Basic Settings
+- **Runtime**: Node.js 22
+- **Entrypoint**: `index.mjs`
+- **Root directory**: `functions/[function-name]` (e.g., `functions/job-requests-acl`)
 
-## Database Schema Requirements
+#### Build Settings
+- **Command**: `npm ci`
 
-### `job_requests` Collection
-Required attributes (all String type):
-- `clientId` (required)
-- `driverId` (required)
-- `pickup` (required)
-- `destination` (required)
-- `scheduledAt` (required)
-- `note` (optional)
-- `status` (required) - "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED"
-- `createdAt` (required)
-- `updatedAt` (required)
-- `estimatedPickupAt` (optional) - added when driver accepts
-- `acceptedAt` (optional) - added when driver accepts
-- `rejectedAt` (optional) - added when driver rejects
+#### Environment Variables
+All functions require these base variables:
+```
+APPWRITE_ENDPOINT = https://fra.cloud.appwrite.io/v1
+APPWRITE_API_KEY = [YOUR_SERVER_API_KEY]
+APPWRITE_DATABASE_ID = drive_genius_db
+```
 
-### `notifications` Collection
-Required attributes:
-- `userId` (String, required) - client who receives the notification
-- `jobRequestId` (String, required) - reference to the job request
-- `type` (String, required) - "JOB_ACCEPTED" | "JOB_REJECTED"
-- `title` (String, required) - "Trip accepted" | "Trip rejected"
-- `body` (String, optional) - ETA details for accepted trips
-- `status` (String, required) - "UNREAD" | "READ"
-- `createdAt` (String, required) - ISO timestamp
-- `readAt` (String, optional) - ISO timestamp when marked read
+**job-requests-acl**:
+```
+APPWRITE_JOB_REQUESTS_ID = job_requests
+```
 
-## Testing the System
+**job-requests-notify**:
+```
+APPWRITE_JOB_REQUESTS_ID = job_requests
+APPWRITE_NOTIFICATIONS_ID = notifications
+```
 
-### 1. Create Job Request
-- Client creates booking → Function triggers → Sets permissions
-- Check Console: job_requests document should have read/update for both client and driver
+**chat-acl**:
+```
+APPWRITE_CONVERSATIONS_ID = conversations
+APPWRITE_MESSAGES_ID = messages
+```
 
-### 2. Driver Accept/Reject
-- Driver accepts with ETA → Status changes to ACCEPTED
-- Function triggers → Creates notification for client
-- Check Console: notifications collection should have new document
+#### Triggers (Events)
+- **job-requests-acl**: `databases.*.collections.job_requests.documents.create`
+- **job-requests-notify**: `databases.*.collections.job_requests.documents.update`
+- **chat-acl**: 
+  - `databases.*.collections.conversations.documents.create`
+  - `databases.*.collections.messages.documents.create`
 
-### 3. Client Notifications
-- Client dashboard badge should increment
-- Notifications screen should show new item
-- Tap to mark as read → Badge decrements
+## Deployment
+
+1. **Connect to Git**: Link your repository in Appwrite Console
+2. **Configure Functions**: Set up each function with the settings above
+3. **Push to Main**: Deployments trigger automatically on push to main branch
 
 ## Troubleshooting
 
 ### Common Issues
 
-**404 Collection Not Found**
-- Verify collection IDs in environment variables
-- Check that collections exist in the correct database
+**"bash: dart: command not found"**
+- Wrong runtime selected. Use Node.js 22, not Dart/Flutter
+- Root directory should point to function folder, not repo root
 
-**401 Permission Denied**
-- Ensure server API key has database read/write permissions
-- Check that ACL Function is deployed and active
+**"index.mjs not found"**
+- Entrypoint mismatch or wrong root directory
+- Ensure entrypoint is relative to configured root directory
 
-**Function Not Triggering**
-- Verify event triggers are set correctly
-- Check Function logs for errors
-- Ensure Function is activated
+**"Cannot find module node-appwrite"**
+- Missing npm install. Add build command `npm ci`
+- Verify package.json includes "node-appwrite" dependency
 
-**Notifications Not Appearing**
-- Check Function logs for "OK" response
-- Verify notifications collection schema
-- Check client dashboard realtime subscription
+**"Missing env"**
+- Set all required environment variables per function
+- Redeploy after adding variables
 
-### Debug Steps
-1. Check Function logs in Console
-2. Verify environment variables
-3. Test Function manually with sample data
-4. Check database permissions on documents
-5. Verify realtime subscriptions are working
+**"Git root includes Flutter only"**
+- Point root directory to `functions/[function-name]`
+- Don't use repo root as it includes Flutter files
 
-## Security Notes
+### Build Failures
+- Check root directory points to function folder
+- Ensure runtime is Node.js 22
+- Verify package.json exists in root directory
+- Confirm index.mjs matches entrypoint
 
-- The temporary client-side permissions (`Permission.update(Role.users())`) allow any authenticated user to update job requests
-- This is a temporary measure until the ACL Function is deployed
-- Once deployed, the ACL Function will restrict permissions to only client + driver
-- Consider removing the temporary permissions after ACL Function is working
+## Function Details
 
-## Performance Considerations
+### job-requests-acl
+Sets read/update/delete permissions for both client and driver on job request documents.
 
-- Functions are lightweight and should respond quickly
-- Realtime subscriptions update UI within ~1 second
-- Badge counts are cached and only recalculated on changes
-- Optimistic UI updates provide immediate feedback
+### job-requests-notify
+Creates notification documents when job status changes to ACCEPTED or REJECTED.
+
+### chat-acl
+Sets permissions on conversation and message documents for the two participants.
+
+## Development
+
+To test locally:
+1. Install dependencies: `npm ci`
+2. Use Appwrite CLI for local testing
+3. Deploy to staging environment first
+
+## Git Integration
+
+- Functions are deployed automatically on push to main branch
+- Each function has its own deployment pipeline
+- Build logs available in Appwrite Console
+- Rollback to previous versions if needed

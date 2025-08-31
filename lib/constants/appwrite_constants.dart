@@ -1,7 +1,7 @@
 class AppwriteConfig {
   // Appwrite Project Configuration
   static const String projectId = '68a53f930037f28d12a8';
-  static const String endpoint = 'https://fra.cloud.appwrite.io/v1';
+  static const String endpoint = 'https://cloud.appwrite.io/v1';
   
   // Database Collection IDs (you'll create these in Appwrite console)
   static const String usersCollection = 'users';
@@ -27,6 +27,9 @@ class AppwriteIds {
   static const String verificationsCollectionId = 'verifications'; // Exact collection ID
   static const String jobRequestsCollectionId = 'job_requests'; // Exact collection ID
   static const String notificationsCollectionId = 'notifications'; // NEW: Notifications collection
+  static const String conversationsCollectionId = 'conversations'; // NEW: Conversations collection
+  static const String messagesCollectionId = 'messages'; // NEW: Messages collection
+  static const String messagesReadCollectionId = 'messages_read'; // NEW: Messages read tracking
   
   // Storage Buckets
   static const String profileBucketId = 'profile-images'; // Exact bucket ID from Console

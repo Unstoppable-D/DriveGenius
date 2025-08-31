@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:appwrite/appwrite.dart';
 import '../../providers/auth_provider.dart';
 import '../../constants/app_constants.dart';
-import '../../services/appwrite_service.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/quick_action_card.dart';
 import '../../widgets/stat_card.dart';
 import '../../widgets/logout_button.dart';
-import '../../widgets/badge_icon.dart';
 
 class ClientDashboardScreen extends StatefulWidget {
   const ClientDashboardScreen({super.key});
@@ -18,41 +15,6 @@ class ClientDashboardScreen extends StatefulWidget {
 }
 
 class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
-  int _unreadCount = 0;
-  RealtimeSubscription? _notifSub;
-  String? _userId;
-
-  @override
-  void initState() {
-    super.initState();
-    _bootstrapBadge();
-  }
-
-  Future<void> _bootstrapBadge() async {
-    final svc = context.read<AppwriteService>();
-    final id = context.read<AuthProvider>().userId ?? await svc.currentUserId();
-    _userId = id;
-
-    Future<void> refreshCount() async {
-      try {
-        final c = await svc.countClientUnreadNotifications(id);
-        if (mounted) setState(() => _unreadCount = c);
-      } catch (_) {}
-    }
-
-    await refreshCount();
-
-    _notifSub = svc.subscribeClientNotifications(
-      userId: id,
-      onChange: refreshCount,
-    );
-  }
-
-  @override
-  void dispose() {
-    _notifSub?.close();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,12 +36,6 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
           },
         ),
         actions: [
-          // Optional AppBar bell with badge
-          IconButton(
-            tooltip: 'Notifications',
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.notifications),
-            icon: BadgeIcon(icon: Icons.notifications_outlined, count: _unreadCount),
-          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: UserAvatar(name: name, imageUrl: avatarUrl, size: 36),
@@ -199,6 +155,13 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               onTap: () => Navigator.pushNamed(context, AppRoutes.bookingRequest),
             ),
             QuickActionCard(
+              title: 'Find Drivers',
+              subtitle: 'Start chatting',
+              icon: Icons.search_outlined,
+              color: Colors.indigo,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.findDrivers),
+            ),
+            QuickActionCard(
               title: 'My trips',
               subtitle: 'Status & history',
               icon: Icons.event_available_outlined,
@@ -206,34 +169,12 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               onTap: () => Navigator.pushNamed(context, AppRoutes.clientTrips),
             ),
             QuickActionCard(
-              title: 'Notifications',
-              subtitle: 'Status updates',
-              icon: Icons.notifications_outlined,
-              color: Colors.amber,
-              badgeCount: _unreadCount,  // NEW
-              onTap: () => Navigator.pushNamed(context, AppRoutes.notifications),
-            ),
-            QuickActionCard(
               title: 'Messages',
               subtitle: 'Chat',
               icon: Icons.chat_bubble_outline,
               color: Colors.blue,
-              onTap: () => Navigator.pushNamed(context, AppRoutes.messages),
+              onTap: () => Navigator.pushNamed(context, AppRoutes.chatInbox),
             ),
-            QuickActionCard(
-              title: 'Emergency',
-                  subtitle: 'Quick contacts',
-                  icon: Icons.emergency_share_outlined,
-                  color: Colors.red,
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.emergency),
-                ),
-                QuickActionCard(
-                  title: 'Payments',
-                  subtitle: 'Methods',
-                  icon: Icons.credit_card,
-                  color: Colors.green,
-                  onTap: () {}, // add route when available
-                ),
               ]),
             ),
           ),

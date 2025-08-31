@@ -18,11 +18,18 @@ import 'screens/job_requests_screen.dart';
 import 'screens/client_trip_requests_screen.dart';
 import 'screens/active_jobs_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/find_drivers_screen.dart';
+import 'screens/chat_inbox_screen.dart';
+import 'screens/chat_room_screen.dart';
 import 'services/appwrite_service.dart';
+import 'services/push_notifications.dart';
 import 'constants/appwrite_constants.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Setup push notifications (prevents Firebase crashes)
+  await setupPushNotifications();
   
   // Initialize Appwrite
   final appwriteService = AppwriteService();
@@ -93,6 +100,9 @@ class DriveGeniusApp extends StatelessWidget {
               AppRoutes.clientTrips: (context) => const ClientTripRequestsScreen(),
               AppRoutes.activeJobs: (context) => const ActiveJobsScreen(),
               AppRoutes.notifications: (context) => const NotificationsScreen(),
+              AppRoutes.findDrivers: (context) => const FindDriversScreen(),
+              AppRoutes.chatInbox: (context) => const ChatInboxScreen(),
+              AppRoutes.chatRoom: (context) => const ChatRoomScreen(),
             },
             
             // Guard Home route: only allow when authenticated
